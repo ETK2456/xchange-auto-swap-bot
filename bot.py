@@ -1,68 +1,80 @@
 import requests, os, json
 
-BASE_URL = "https://xchange.me/api/v1"
+# Xchange.me real API - using their web endpoint that xm-cli.py uses
+BASE = "https://xchange.me/api"
 
 def main():
-    # Get from GitHub Secrets
-    FROM = os.getenv("FROM_CURRENCY", "btc").lower().strip()
-    TO = os.getenv("TO_CURRENCY", "usdt").lower().strip()
-    AMOUNT = os.getenv("FROM_AMOUNT", "0.001").strip()
-    TO_ADDR = os.getenv("TO_ADDRESS", "").strip() # TJ4B... Binance TRC20
-    REFUND = os.getenv("REFUND_ADDRESS", "").strip() # BTC refund
+    FROM = os.getenv("FROM_CURRENCY", "btc").lower()
+    TO = os.getenv("TO_CURRENCY", "usdt").lower()  # must be usdt for your case
+    AMOUNT = os.getenv("FROM_AMOUNT", "0.001")
+    TO_ADDR = os.getenv("TO_ADDRESS", "").strip()  # Your TJ4B... TRC20
+    REFUND = os.getenv("REFUND_ADDRESS", "").strip()
 
-    print("="*50)
-    print(f"XCHANGE BOT - LIVE MODE")
-    print(f"Swap: {AMOUNT} {FROM.upper()} -> {TO.upper()}")
-    print(f"Receive at: {TO_ADDR}")
-    print(f"Refund to: {REFUND}")
-    print("="*50)
+    print(f"=== LIVE: {AMOUNT} {FROM} -> {TO} (TRC20) ===")
+    print(f"TO_ADDR: {TO_ADDR}")
+    print(f"REFUND: {REFUND}")
 
-    if not TO_ADDR or not REFUND:
-        print("ERROR: TO_ADDRESS or REFUND_ADDRESS secret missing!")
+    if not TO_ADDR:
+        print("ERROR: TO_ADDRESS missing!")
         return
 
-    # Step 1: Create exchange
-    url = f"{BASE_URL}/exchange"
+    # The correct way: use xchange.me exchange creation endpoint
+    # According to CLI docs: --withdraw-to trx for USDT-TRC20
+    # Endpoint found in xm-cli.py is /api/exchange
+    
+    url = "https://xchange.me/api/exchange"
+    
+    # Try the actual API format from CLI
     payload = {
         "from_currency": FROM,
         "to_currency": TO,
-        "from_amount": str(AMOUNT),
         "to_address": TO_ADDR,
-        "refund_address": REFUND
+        "refund_address": REFUND,
+        "from_amount": AMOUNT,
+        "withdraw_to": "trx",  # <-- THIS IS KEY FOR TRC20!
+        "dest_chain": "trx"
     }
-
-    print(f"\n[1] Creating order... {url}")
-    print(f"Payload: {json.dumps(payload, indent=2)}")
-
+    
+    # Try 1: POST to /api/exchange
     try:
-        r = requests.post(url, json=payload, timeout=30)
-        print(f"\nStatus Code: {r.status_code}")
-        print(f"Raw Response: {r.text}\n")
-
-        data = r.json()
-
-        # Check success
-        if r.status_code == 200 or r.status_code == 201:
-            print("✅ ORDER CREATED SUCCESSFULLY!")
-            print(json.dumps(data, indent=2))
-
-            payin = data.get("payin_address") or data.get("from", {}).get("address") or data.get("payinAddress")
-            payin_amount = data.get("payin_amount") or data.get("from", {}).get("amount") or AMOUNT
-            order_id = data.get("id") or data.get("order_id") or "N/A"
-
-            print("\n" + "="*50)
-            print(f"👉 SEND {payin_amount} BTC TO:")
-            print(f" {payin}")
-            print(f"Order ID: {order_id}")
-            print(f"USDT will arrive at: {TO_ADDR} (TRC20)")
-            print("="*50)
-
-        else:
-            print("❌ FAILED TO CREATE ORDER")
-            print(f"Error: {data}")
-
+        print(f"\n[TRY 1] POST {url}")
+        print(f"Payload: {json.dumps(payload, indent=2)}")
+        r = requests.post(url, json=payload, headers={"Content-Type": "application/json", "Accept": "application/json"}, timeout=30)
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:2000]}")
+        if "payin_address" in r.text.lower() or "address" in r.text.lower() and r.status_code in [200,201]:
+            print("\n✅ SUCCESS!")
+            return
     except Exception as e:
-        print(f"❌ Exception: {e}")
+        print(f"Try1 error: {e}")
+
+    # Try 2: POST to /api/v1/exchange/create
+    try:
+        url2 = "https://xchange.me/api/v1/exchange"
+        print(f"\n[TRY 2] POST {url2}")
+        r = requests.post(url2, json=payload, timeout=30)
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:2000]}")
+    except Exception as e:
+        print(f"Try2 error: {e}")
+
+    # Try 3: Using xm-cli.py directly - download and run like official CLI
+    print("\n[TRY 3] Downloading official xm-cli.py and using it")
+    try:
+        cli_url = "https://xchange.me/xm-cli.py"
+        cli_code = requests.get(cli_url, timeout=15).text
+        open("xm-cli.py", "w").write(cli_code)
+        print("Downloaded xm-cli.py")
+        print("Run it with: python3 xm-cli.py create-exchange btc usdt YOUR_ADDR --amount 0.001 --withdraw-to trx")
+        # We can't run torsocks in Actions, but run without --onion
+        import subprocess
+        cmd = f'python3 xm-cli.py create-exchange {FROM} {TO} {TO_ADDR} --amount {AMOUNT} --withdraw-to trx --refund-address {REFUND}'
+        print(f"Running: {cmd}")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        print("STDOUT:", result.stdout)
+        print("STDERR:", result.stderr)
+    except Exception as e:
+        print(f"Try3 error: {e}")
 
 if __name__ == "__main__":
     main()
