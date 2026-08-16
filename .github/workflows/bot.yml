@@ -1,0 +1,25 @@
+name: xchange-auto-bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # runs every 6 hours - remove this line if you only want manual
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Run bot
+        env:
+          FROM_CURRENCY: ${{ secrets.FROM_CURRENCY }}
+          TO_CURRENCY: ${{ secrets.TO_CURRENCY }}
+          FROM_AMOUNT: ${{ secrets.FROM_AMOUNT }}
+          TO_ADDRESS: ${{ secrets.TO_ADDRESS }}
+          REFUND_ADDRESS: ${{ secrets.REFUND_ADDRESS }}
+        run: python bot.py
