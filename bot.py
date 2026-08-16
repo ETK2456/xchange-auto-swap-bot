@@ -1,40 +1,77 @@
-import requests, os, json, subprocess
+import hmac
+import hashlib
+import json
+import requests
+import os
 
-TO_ADDR = "TJ4BveBmTkbozPk5wR7GXcQwfL8FHszQAe"  # <-- YOUR BINANCE TRC20
+# Your Binance TRC20
+BINANCE_TRC20 = "TJ4BveBmTkbozPk5wR7GXcQwfL8FHszQAe"
+
+def sign(data_str, secret):
+    return hmac.new(secret.encode(), data_str.encode(), hashlib.sha256).hexdigest()
 
 def main():
-    FROM = os.getenv("FROM_CURRENCY", "btc").lower()
-    TO = os.getenv("TO_CURRENCY", "usdt").lower()
-    AMOUNT = os.getenv("FROM_AMOUNT", "0.001")
-    REFUND = os.getenv("REFUND_ADDRESS", "").strip()
+    API_KEY = os.getenv("FF_API_KEY", "").strip()
+    API_SECRET = os.getenv("FF_API_SECRET", "").strip()
+    FROM_AMOUNT = os.getenv("FROM_AMOUNT", "0.001").strip()
+    TO_ADDR = os.getenv("TO_ADDRESS", BINANCE_TRC20).strip() or BINANCE_TRC20
 
-    # Use secret if set, else use pasted address
-    final_to = os.getenv("TO_ADDRESS", TO_ADDR).strip() or TO_ADDR
+    print("=== FIXEDFLOAT BTC -> USDT TRC20 ===")
+    print(f"Amount: {FROM_AMOUNT} BTC")
+    print(f"To: {TO_ADDR}")
 
-    print(f"=== LIVE SWAP ===")
-    print(f"{AMOUNT} {FROM} -> {TO} (TRC20-TRX chain)")
-    print(f"TO: {final_to}")
-    print(f"REFUND: {REFUND}")
+    if not API_KEY or not API_SECRET:
+        print("ERROR: FF_API_KEY or FF_API_SECRET missing in GitHub Secrets!")
+        return
+
+    url = "https://ff.io/api/v2/create"
+    params = {
+        "fromCcy": "BTC",
+        "toCcy": "USDTTRC",
+        "amount": float(FROM_AMOUNT),
+        "direction": "from",
+        "type": "float",
+        "toAddress": TO_ADDR
+    }
+
+    data_json = json.dumps(params)
+    signature = sign(data_json, API_SECRET)
+
+    headers = {
+        "X-API-KEY": API_KEY,
+        "X-API-SIGN": signature,
+        "Content-Type": "application/json; charset=UTF-8",
+        "Accept": "application/json"
+    }
+
+    print("\nCreating order on ff.io...")
+    r = requests.post(url, data=data_json, headers=headers, timeout=30)
+    
+    print(f"HTTP: {r.status_code}")
+    print(f"Body: {r.text}\n")
 
     try:
-        print("\nDownloading xm-cli.py...")
-        r = requests.get("https://xchange.me/xm-cli.py", timeout=15)
-        open("xm-cli.py","w").write(r.text)
-        
-        cmd = f'python3 xm-cli.py create-exchange {FROM} {TO} {final_to} --amount {AMOUNT} --withdraw-to trx --refund-address {REFUND}'
-        print(f"Running: {cmd}\n")
-        
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=40)
-        print(result.stdout)
-        print(result.stderr)
-        
-        if "payin" in result.stdout.lower() or "please pay" in result.stdout.lower():
-            print("\n✅ ORDER CREATED - SEND BTC TO ADDRESS ABOVE!")
+        j = r.json()
+        if j.get("code") == 0:
+            data = j.get("data", {})
+            order_id = data.get("id") or data.get("orderId") or "N/A"
+            from_info = data.get("from", {})
+            to_info = data.get("to", {})
+
+            print("="*50)
+            print("✅ SUCCESS! ORDER CREATED")
+            print(f"Order ID: {order_id}")
+            print(f"")
+            print(f"👉 SEND {from_info.get('amount')} {from_info.get('code')} TO:")
+            print(f"   {from_info.get('address')}")
+            print(f"")
+            print(f"YOU WILL RECEIVE {to_info.get('amount')} USDT TRC20")
+            print(f"AT: {TO_ADDR}")
+            print("="*50)
         else:
-            print("\nCheck output above")
-            
+            print(f"❌ Failed: {j.get('msg')} Code: {j.get('code')}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Exception: {e}")
 
 if __name__ == "__main__":
     main()
