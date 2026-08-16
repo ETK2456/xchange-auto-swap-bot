@@ -1,41 +1,68 @@
-import requests, os, json, time
-BASE = "https://xchange.me/api/v1"
+import requests, os, json
 
-def create_order():
-    from_cur = os.getenv("FROM_CURRENCY", "btc")
-    to_cur = os.getenv("TO_CURRENCY", "usdt")
-    amount = os.getenv("FROM_AMOUNT", "0.001")
-    to_addr = os.getenv("TO_ADDRESS")
-    refund_addr = os.getenv("REFUND_ADDRESS")
+BASE_URL = "https://xchange.me/api/v1"
 
-    print(f"=== CREATING REAL ORDER ===")
-    print(f"{amount} {from_cur} -> {to_cur} to {to_addr}")
+def main():
+    # Get from GitHub Secrets
+    FROM = os.getenv("FROM_CURRENCY", "btc").lower().strip()
+    TO = os.getenv("TO_CURRENCY", "usdt").lower().strip()
+    AMOUNT = os.getenv("FROM_AMOUNT", "0.001").strip()
+    TO_ADDR = os.getenv("TO_ADDRESS", "").strip() # TJ4B... Binance TRC20
+    REFUND = os.getenv("REFUND_ADDRESS", "").strip() # BTC refund
 
+    print("="*50)
+    print(f"XCHANGE BOT - LIVE MODE")
+    print(f"Swap: {AMOUNT} {FROM.upper()} -> {TO.upper()}")
+    print(f"Receive at: {TO_ADDR}")
+    print(f"Refund to: {REFUND}")
+    print("="*50)
+
+    if not TO_ADDR or not REFUND:
+        print("ERROR: TO_ADDRESS or REFUND_ADDRESS secret missing!")
+        return
+
+    # Step 1: Create exchange
+    url = f"{BASE_URL}/exchange"
     payload = {
-        "from_currency": from_cur,
-        "to_currency": to_cur,
-        "from_amount": amount,
-        "to_address": to_addr,
-        "refund_address": refund_addr
+        "from_currency": FROM,
+        "to_currency": TO,
+        "from_amount": str(AMOUNT),
+        "to_address": TO_ADDR,
+        "refund_address": REFUND
     }
 
+    print(f"\n[1] Creating order... {url}")
+    print(f"Payload: {json.dumps(payload, indent=2)}")
+
     try:
-        r = requests.post(f"{BASE}/exchange", json=payload, timeout=20)
-        print(f"Status: {r.status_code}")
-        print(f"Response: {r.text}")
+        r = requests.post(url, json=payload, timeout=30)
+        print(f"\nStatus Code: {r.status_code}")
+        print(f"Raw Response: {r.text}\n")
 
         data = r.json()
-        if r.status_code == 200 and "payin_address" in str(data).lower():
-            print("\n*** SUCCESS! SEND YOUR BTC TO: ***")
+
+        # Check success
+        if r.status_code == 200 or r.status_code == 201:
+            print("✅ ORDER CREATED SUCCESSFULLY!")
             print(json.dumps(data, indent=2))
-            # Save order info
-            with open("last_order.json", "w") as f:
-                json.dump(data, f, indent=2)
+
+            payin = data.get("payin_address") or data.get("from", {}).get("address") or data.get("payinAddress")
+            payin_amount = data.get("payin_amount") or data.get("from", {}).get("amount") or AMOUNT
+            order_id = data.get("id") or data.get("order_id") or "N/A"
+
+            print("\n" + "="*50)
+            print(f"👉 SEND {payin_amount} BTC TO:")
+            print(f" {payin}")
+            print(f"Order ID: {order_id}")
+            print(f"USDT will arrive at: {TO_ADDR} (TRC20)")
+            print("="*50)
+
         else:
-            print("\nCheck response above for payin address")
+            print("❌ FAILED TO CREATE ORDER")
+            print(f"Error: {data}")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Exception: {e}")
 
 if __name__ == "__main__":
-    create_order()
+    main()
