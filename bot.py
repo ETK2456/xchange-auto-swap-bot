@@ -1,46 +1,41 @@
-import requests, os, json
-
+import requests, os, json, time
 BASE = "https://xchange.me/api/v1"
 
-def main():
-    from_cur = os.getenv("FROM_CURRENCY", "btc").lower()
-    to_cur = os.getenv("TO_CURRENCY", "usdt").lower()
+def create_order():
+    from_cur = os.getenv("FROM_CURRENCY", "btc")
+    to_cur = os.getenv("TO_CURRENCY", "usdt")
     amount = os.getenv("FROM_AMOUNT", "0.001")
-    to_addr = os.getenv("TO_ADDRESS", "TJ4BveBmTkbozPk5wR7GXcQwfL8FHszQAe")
-    refund_addr = os.getenv("REFUND_ADDRESS", "")
+    to_addr = os.getenv("TO_ADDRESS")
+    refund_addr = os.getenv("REFUND_ADDRESS")
 
-    print(f"=== BOT START ===")
-    print(f"FROM: {from_cur} AMOUNT: {amount}")
-    print(f"TO: {to_cur} ADDRESS: {to_addr}")
-    print(f"REFUND: {refund_addr[:10]}...")
+    print(f"=== CREATING REAL ORDER ===")
+    print(f"{amount} {from_cur} -> {to_cur} to {to_addr}")
 
-    # 1. Check currencies
+    payload = {
+        "from_currency": from_cur,
+        "to_currency": to_cur,
+        "from_amount": amount,
+        "to_address": to_addr,
+        "refund_address": refund_addr
+    }
+
     try:
-        r = requests.get(f"{BASE}/currencies/to", timeout=10)
-        print(f"\nTO currencies available: {r.text[:500]}")
-    except Exception as e:
-        print(f"Currency check failed: {e}")
+        r = requests.post(f"{BASE}/exchange", json=payload, timeout=20)
+        print(f"Status: {r.status_code}")
+        print(f"Response: {r.text}")
 
-    # 2. Estimate
-    try:
-        params = {
-            "from_currency": from_cur,
-            "to_currency": to_cur,
-            "from_amount": amount
-        }
-        r = requests.get(f"{BASE}/exchange/estimate", params=params, timeout=15)
-        print(f"\nESTIMATE status: {r.status_code}")
-        print(f"ESTIMATE body: {r.text}")
-        data = r.json() if r.ok else {}
-        if r.ok:
-            print(f"\n*** RATE: 1 {from_cur} = {data.get('to_amount', '?')} {to_cur} ***")
-            print("Estimate OK! Your TO_CURRENCY name is correct.")
+        data = r.json()
+        if r.status_code == 200 and "payin_address" in str(data).lower():
+            print("\n*** SUCCESS! SEND YOUR BTC TO: ***")
+            print(json.dumps(data, indent=2))
+            # Save order info
+            with open("last_order.json", "w") as f:
+                json.dump(data, f, indent=2)
         else:
-            print(f"\nIf error says 'invalid currency', try changing TO_CURRENCY secret to: usdt_tron or usdttrc20 or usdt_trc20")
-    except Exception as e:
-        print(f"Estimate failed: {e}")
+            print("\nCheck response above for payin address")
 
-    print("\n=== TEST DONE - NO REAL ORDER CREATED ===")
+    except Exception as e:
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
-    main()
+    create_order()
