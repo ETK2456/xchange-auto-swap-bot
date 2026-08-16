@@ -1,10 +1,8 @@
-name: xchange-auto-bot
-
+name: xchange-auto-swap-bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # runs every 6 hours - remove this line if you only want manual
-
+    - cron: '0 */6 * * *'
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -14,7 +12,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: pip install requests
       - name: Run bot
         env:
           FROM_CURRENCY: ${{ secrets.FROM_CURRENCY }}
@@ -22,4 +20,6 @@ jobs:
           FROM_AMOUNT: ${{ secrets.FROM_AMOUNT }}
           TO_ADDRESS: ${{ secrets.TO_ADDRESS }}
           REFUND_ADDRESS: ${{ secrets.REFUND_ADDRESS }}
+          FF_API_KEY: ${{ secrets.FF_API_KEY }}
+          FF_API_SECRET: ${{ secrets.FF_API_SECRET }}
         run: python bot.py
